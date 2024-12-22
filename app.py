@@ -20,44 +20,101 @@ LANGUAGES = {
 }
 language = st.selectbox("Select Language", options=list(LANGUAGES.keys()), format_func=lambda x: LANGUAGES[x])
 
-# Upload image
-uploaded_file = st.file_uploader("Capture or Upload an Image", type=["jpg", "jpeg", "png"])
+# Inject JavaScript for webcam capture
+st.markdown(
+    """
+    <script>
+    async function captureImage() {
+        const video = document.createElement('video');
+        const canvas = document.createElement('canvas');
+        const context = canvas.getContext('2d');
 
-def query_image(image_file):
-    headers = {"Authorization": f"Bearer {API_KEY}"}
-    response = requests.post(API_URL, headers=headers, files={"file": image_file})
-    return response.json()
+        const stream = await navigator.mediaDevices.getUserMedia({ video: true });
+        video.srcObject = stream;
+        await video.play();
 
-def generate_audio(caption, lang):
+        canvas.width = video.videoWidth;
+        canvas.height = video.videoHeight;
+        context.drawImage(video, 0, 0, canvas.width, canvas.height);
+
+        const imageDataURL = canvas.toDataURL('image/png');
+        stream.getTracks().forEach(track => track.stop());
+        
+        const imageInput = document.getElementById('imageData');
+        imageInput.value = imageDataURL;
+        document.getElementById('imageForm').submit();
+    }
+    </script>
+    """,
+    unsafe_allow_html=True,
+)
+
+# Hidden form to handle image submission
+st.markdown(
+    """
+    <form id="imageForm" method="post">
+        <input type="hidden" id="imageData" name="imageData">
+    </form>
+    <button onclick="captureImage()">Capture Image</button>
+    """,
+    unsafe_allow_html=True,
+)
+
+# Handle image submission
+if st.experimental_get_query_params().get("imageData"):
+    import base64
+    from PIL import Image
+    from io import BytesIO
+
+    image_data = st.experimental_get_query_params()["imageData"][0]
+    image_data = image_data.split(",")[1]
+    image_bytes = base64.b64decode(image_data)
+    image = Image.open(BytesIO(image_bytes))
+
+    # Save the image for processing
+    temp_image = NamedTemporaryFile(delete=False, suffix=".png")
+    image.save(temp_image.name)
+
+    # Call the image captioning API
+    def query_image(image_file):
+        headers = {"Authorization": f"Bearer {API_KEY}"}
+        response = requests.post(API_URL, headers=headers, files={"file": image_file})
+        return response.json()
+
     try:
-        tts = gTTS(text=caption, lang=lang)
-        temp_file = NamedTemporaryFile(delete=False, suffix='.mp3')
-        tts.save(temp_file.name)
-        return temp_file.name
-    except Exception as e:
-        st.error(f"Error in TTS: {e}")
-        return None
-
-# Process uploaded file
-if uploaded_file is not None:
-    with st.spinner("Generating Caption..."):
-        try:
-            # Call the captioning API
-            result = query_image(uploaded_file)
+        with st.spinner("Generating Caption..."):
+            result = query_image(temp_image.name)
             if isinstance(result, list) and len(result) > 0:
                 caption = result[0].get("generated_text", "No caption generated")
             else:
                 caption = "Unexpected response from the model"
 
-            # Display the caption
-            st.image(uploaded_file, caption=caption, use_column_width=True)
+            # Display the image and caption
+            st.image(image, caption=caption, use_column_width=True)
             st.success(f"Caption: {caption}")
 
-            # Generate and display audio
+            # Generate and autoplay audio
+            def generate_audio(caption, lang):
+                try:
+                    tts = gTTS(text=caption, lang=lang)
+                    temp_audio = NamedTemporaryFile(delete=False, suffix=".mp3")
+                    tts.save(temp_audio.name)
+                    return temp_audio.name
+                except Exception as e:
+                    st.error(f"Error in TTS: {e}")
+                    return None
+
             audio_file_path = generate_audio(caption, language)
             if audio_file_path:
-                with open(audio_file_path, "rb") as audio_file:
-                    audio_data = audio_file.read()
-                    st.audio(audio_data, format="audio/mp3")
-        except Exception as e:
-            st.error(f"Error processing image: {e}")
+                audio_data_url = f"data:audio/mp3;base64,{base64.b64encode(open(audio_file_path, 'rb').read()).decode()}"
+                st.markdown(
+                    f"""
+                    <audio autoplay>
+                        <source src="{audio_data_url}" type="audio/mp3">
+                        Your browser does not support the audio element.
+                    </audio>
+                    """,
+                    unsafe_allow_html=True,
+                )
+    except Exception as e:
+        st.error(f"Error processing image: {e}")
