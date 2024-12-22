@@ -2,15 +2,10 @@ import streamlit as st
 from gtts import gTTS
 import requests
 from tempfile import NamedTemporaryFile
-import pygame.mixer
-import os
 
 # Constants
 API_URL = "https://api-inference.huggingface.co/models/Salesforce/blip-image-captioning-large"
 API_KEY = "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"
-
-# Initialize pygame mixer
-pygame.mixer.init()
 
 # Streamlit app title
 st.title("Image Captioning for the Visually Impaired")
@@ -33,20 +28,15 @@ def query_image(image_file):
     response = requests.post(API_URL, headers=headers, files={"file": image_file})
     return response.json()
 
-def speak_caption(caption, lang):
+def generate_audio(caption, lang):
     try:
         tts = gTTS(text=caption, lang=lang)
         temp_file = NamedTemporaryFile(delete=False, suffix='.mp3')
         tts.save(temp_file.name)
-
-        # Play the audio
-        pygame.mixer.music.load(temp_file.name)
-        pygame.mixer.music.play()
-        while pygame.mixer.music.get_busy():
-            pygame.time.Clock().tick(10)
-        os.unlink(temp_file.name)
+        return temp_file.name
     except Exception as e:
         st.error(f"Error in TTS: {e}")
+        return None
 
 # Process uploaded file
 if uploaded_file is not None:
@@ -63,7 +53,11 @@ if uploaded_file is not None:
             st.image(uploaded_file, caption=caption, use_column_width=True)
             st.success(f"Caption: {caption}")
 
-            # Speak the caption
-            speak_caption(caption, language)
+            # Generate and display audio
+            audio_file_path = generate_audio(caption, language)
+            if audio_file_path:
+                with open(audio_file_path, "rb") as audio_file:
+                    audio_data = audio_file.read()
+                    st.audio(audio_data, format="audio/mp3")
         except Exception as e:
             st.error(f"Error processing image: {e}")
