@@ -52,10 +52,14 @@ def speak_caption(caption, language):
         with tempfile.NamedTemporaryFile(delete=False, suffix='.mp3') as temp_file:
             tts = gTTS(text=caption, lang=language)
             tts.save(temp_file.name)
-            st.audio(temp_file.name)
+            # Load the MP3 file for playback
+            audio_bytes = open(temp_file.name, "rb").read()
+            st.audio(audio_bytes, format="audio/mp3", start_time=0)
             os.unlink(temp_file.name)
     except Exception as e:
         st.error(f"Text-to-speech error: {e}")
+
+
 
 def generate_caption(image: Image.Image) -> str:
     """Generate caption for the image using Hugging Face API"""
