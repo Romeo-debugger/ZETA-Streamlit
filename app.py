@@ -3,16 +3,13 @@ from streamlit_webrtc import webrtc_streamer
 import av
 from PIL import Image
 import numpy as np
-import pyttsx3
+from gtts import gTTS
+import os
 from transformers import BlipProcessor, BlipForConditionalGeneration
 
 # Load the BLIP model and processor
 processor = BlipProcessor.from_pretrained("Salesforce/blip-image-captioning-base")
 model = BlipForConditionalGeneration.from_pretrained("Salesforce/blip-image-captioning-base")
-
-# Initialize text-to-speech engine
-engine = pyttsx3.init()
-engine.setProperty('rate', 150)  # Adjust speaking speed
 
 # Function to generate captions
 def generate_caption(image: Image.Image) -> str:
@@ -29,9 +26,12 @@ def video_frame_callback(frame):
     # Streamlit to display the caption
     st.session_state['caption'] = caption
 
-    # Read the caption aloud
-    engine.say(caption)
-    engine.runAndWait()
+    # Generate speech using gTTS and save it as an audio file
+    tts = gTTS(caption)
+    tts.save("caption.mp3")
+
+    # Play the audio
+    st.audio("caption.mp3", format="audio/mp3", start_time=0)
     return av.VideoFrame.from_ndarray(np.array(img), format="rgb24")
 
 # Streamlit app setup
