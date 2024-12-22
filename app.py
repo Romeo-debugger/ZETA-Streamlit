@@ -4,35 +4,28 @@ import av
 from PIL import Image
 import numpy as np
 from gtts import gTTS
+import requests
 import os
-from transformers import BlipProcessor, BlipForConditionalGeneration
 from translate import Translator
 import tempfile
 import pygame.mixer
-import time
 
 # Initialize audio mixer
 pygame.mixer.init()
 
-# Initialize the BLIP model and processor
-@st.cache_resource
-def load_model():
-    processor = BlipProcessor.from_pretrained("Salesforce/blip-image-captioning-base")
-    model = BlipForConditionalGeneration.from_pretrained("Salesforce/blip-image-captioning-base")
-    return processor, model
+# Hugging Face API Configuration
+HF_API_KEY = "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"
+API_URL = "https://api-inference.huggingface.co/models/Salesforce/blip-image-captioning-large"
+HEADERS = {"Authorization": f"Bearer {HF_API_KEY}"}
 
-processor, model = load_model()
-
-# Language configuration (keeping the extensive language support from original code)
+# Language configuration
 LANGUAGES = {
-    # Indian Languages
     'en': {'name': 'English', 'code': 'en'},
     'ta': {'name': 'Tamil', 'code': 'ta'},
     'kn': {'name': 'Kannada', 'code': 'kn'},
     'hi': {'name': 'Hindi', 'code': 'hi'},
     'ml': {'name': 'Malayalam', 'code': 'ml'},
     'te': {'name': 'Telugu', 'code': 'te'},
-    # Adding more languages as needed...
 }
 
 # Initialize session state
@@ -60,18 +53,33 @@ def speak_caption(caption, language):
             tts = gTTS(text=caption, lang=language)
             tts.save(temp_file.name)
             st.audio(temp_file.name)
-            # Clean up
             os.unlink(temp_file.name)
     except Exception as e:
         st.error(f"Text-to-speech error: {e}")
 
 def generate_caption(image: Image.Image) -> str:
-    """Generate caption for the image"""
+    """Generate caption for the image using Hugging Face API"""
     try:
-        inputs = processor(images=image, return_tensors="pt")
-        outputs = model.generate(**inputs)
-        caption = processor.decode(outputs[0], skip_special_tokens=True)
-        return caption
+        # Convert image to bytes
+        buffered_image = tempfile.NamedTemporaryFile(delete=False, suffix=".jpg")
+        image.save(buffered_image.name, format="JPEG")
+        with open(buffered_image.name, "rb") as f:
+            image_bytes = f.read()
+        os.unlink(buffered_image.name)
+        
+        # Send request to Hugging Face API
+        response = requests.post(
+            API_URL,
+            headers=HEADERS,
+            files={"file": ("image.jpg", image_bytes, "image/jpeg")}
+        )
+        
+        if response.status_code == 200:
+            caption = response.json().get("generated_text", "No caption received.")
+            return caption
+        else:
+            st.error(f"API Error: {response.status_code} - {response.text}")
+            return "Error generating caption"
     except Exception as e:
         st.error(f"Caption generation error: {e}")
         return "Error generating caption"
